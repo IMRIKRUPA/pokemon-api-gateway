@@ -38,6 +38,18 @@ PIKACHU_POKEAPI_RESPONSE = {
     ],
 }
 
+HO_OH_POKEAPI_RESPONSE = {
+    "name": "ho-oh",
+    "height": 38,
+    "weight": 1990,
+    "types": [
+        {"slot": 1, "type": {"name": "fire", "url": "https://pokeapi.co/api/v2/type/10/"}}
+    ],
+    "abilities": [
+        {"ability": {"name": "pressure", "url": "https://pokeapi.co/api/v2/ability/46/"}, "is_hidden": False, "slot": 1}
+    ],
+}
+
 
 def test_health_endpoint(client):
     """Test GET /health returns HTTP 200 and status ok."""
@@ -90,42 +102,107 @@ def test_pokemon_info_pikachu(mock_get, client):
 
 
 @patch("requests.get")
-def test_pokemon_info_normalization(mock_get, client):
-    """Test GET /pokemon-info normalizes and trims name query parameter."""
+def test_pokemon_info_valid_hyphenated(mock_get, client):
+    """Test valid hyphenated names like ho-oh."""
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = DITTO_POKEAPI_RESPONSE
+    mock_response.json.return_value = HO_OH_POKEAPI_RESPONSE
     mock_get.return_value = mock_response
 
-    response = client.get("/pokemon-info?name=%20%20DiTtO%20%20")
+    response = client.get("/pokemon-info?name=ho-oh")
     assert response.status_code == 200
-    mock_get.assert_called_once_with("https://pokeapi.co/api/v2/pokemon/ditto", timeout=5.0)
+    assert response.content_type == "application/json"
+    assert response.get_json() == {
+        "name": "ho-oh",
+        "type": "fire",
+        "height": 38,
+        "weight": 1990,
+        "first_ability": "pressure",
+    }
 
 
-def test_pokemon_info_missing_name(client):
-    """Test GET /pokemon-info without name query parameter returns 400."""
+def test_pokemon_info_uppercase_rejected(client):
+    """Test GET /pokemon-info?name=PIKACHU returns 400 Invalid Pokemon name."""
+    response = client.get("/pokemon-info?name=PIKACHU")
+    assert response.status_code == 400
+    assert response.content_type == "application/json"
+    assert response.get_json() == {"error": "Invalid Pokemon name"}
+
+
+def test_pokemon_info_mixedcase_rejected(client):
+    """Test GET /pokemon-info?name=Pikachu returns 400 Invalid Pokemon name."""
+    response = client.get("/pokemon-info?name=Pikachu")
+    assert response.status_code == 400
+    assert response.content_type == "application/json"
+    assert response.get_json() == {"error": "Invalid Pokemon name"}
+
+
+def test_pokemon_info_numeric_only_rejected(client):
+    """Test GET /pokemon-info?name=123 returns 400 Invalid Pokemon name."""
+    response = client.get("/pokemon-info?name=123")
+    assert response.status_code == 400
+    assert response.content_type == "application/json"
+    assert response.get_json() == {"error": "Invalid Pokemon name"}
+
+
+def test_pokemon_info_whitespace_rejected(client):
+    """Test GET /pokemon-info with whitespace returns 400 Invalid Pokemon name."""
+    response = client.get("/pokemon-info?name=%20ditto%20")
+    assert response.status_code == 400
+    assert response.content_type == "application/json"
+    assert response.get_json() == {"error": "Invalid Pokemon name"}
+
+
+def test_pokemon_info_empty_string_rejected(client):
+    """Test GET /pokemon-info with empty name string returns 400 Invalid Pokemon name."""
+    response = client.get("/pokemon-info?name=")
+    assert response.status_code == 400
+    assert response.content_type == "application/json"
+    assert response.get_json() == {"error": "Invalid Pokemon name"}
+
+
+def test_pokemon_info_missing_name_parameter(client):
+    """Test GET /pokemon-info without name parameter returns 400 Pokemon name is required."""
     response = client.get("/pokemon-info")
     assert response.status_code == 400
     assert response.content_type == "application/json"
     assert response.get_json() == {"error": "Pokemon name is required"}
 
 
-def test_pokemon_info_empty_name(client):
-    """Test GET /pokemon-info with whitespace name returns 400."""
-    response = client.get("/pokemon-info?name=%20%20")
-    assert response.status_code == 400
-    assert response.content_type == "application/json"
-    assert response.get_json() == {"error": "Pokemon name is required"}
-
-
 @patch("requests.get")
-def test_pokemon_info_not_found(mock_get, client):
-    """Test GET /pokemon-info for nonexistent Pokémon returns 404."""
+def test_pokemon_info_malformed_hyphenated_pika_chu(mock_get, client):
+    """Test malformed hyphenated name pika-chu returns 400 Invalid Pokemon name."""
     mock_response = MagicMock()
     mock_response.status_code = 404
     mock_get.return_value = mock_response
 
-    response = client.get("/pokemon-info?name=nonexistentpokemon123")
+    response = client.get("/pokemon-info?name=pika-chu")
+    assert response.status_code == 400
+    assert response.content_type == "application/json"
+    assert response.get_json() == {"error": "Invalid Pokemon name"}
+
+
+@patch("requests.get")
+def test_pokemon_info_malformed_hyphenated_a_b_c_d(mock_get, client):
+    """Test malformed hyphenated name a-b-c-d returns 400 Invalid Pokemon name."""
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_get.return_value = mock_response
+
+    response = client.get("/pokemon-info?name=a-b-c-d")
+    assert response.status_code == 400
+    assert response.content_type == "application/json"
+    assert response.get_json() == {"error": "Invalid Pokemon name"}
+
+
+@patch("requests.get")
+def test_pokemon_info_not_found_syntactically_valid(mock_get, client):
+    """Test GET /pokemon-info for syntactically valid non-existent single lowercase name returns 404."""
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_get.return_value = mock_response
+
+    response = client.get("/pokemon-info?name=invalidpokemon12345")
     assert response.status_code == 404
     assert response.content_type == "application/json"
     assert response.get_json() == {"error": "Pokemon not found"}
